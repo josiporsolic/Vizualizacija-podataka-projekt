@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <script src="https://d3js.org/d3-geo.v1.min.js"></script>
+    <script src="http://d3js.org/topojson.v1.min.js"></script>
+    <script src="https://d3js.org/d3-ease.v1.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <title>Data visualisation of world population</title>
+</head>
+<body>
+    <h1 class="white center padding">World population</h1>
+    <div id="mapContainer">
+    </div>
+
+    <select class="margin" id="countries">
+        <option selected>Choose country...</option>
+    </select>
+
+    <script>
+        const width = innerWidth;
+        const height = innerHeight;
+        let linechart;
+
+        const colors = ["#2e61b8", "#2eb8a6", "#eaed87", "#8ab82e", "#b8b32e"];
+        const colorValue = d => d.properties.income_grp;
+
+        const svg = d3.select("#mapContainer").append("svg")
+            .attr("id", "mapSvg")
+            .attr("width", width)
+            .attr("height", height * 0.95);
+
+     
+        const projection = d3.geoNaturalEarth1()
+            .scale(230)
+            .translate([width / 2.25, height / 2.15]);
+        const pathGenerator = d3.geo.path().projection(projection);
+        
+        const mapGroup = svg.append('g');
+
+        mapGroup.append('path')
+            .attr('class', 'sphere')
+            .attr('d', pathGenerator({type: "Sphere"}));
+
+        
+        const zoomLevelLimit = [1, 5];
+        const zoom = d3.behavior.zoom().scaleExtent(zoomLevelLimit)
+
+        svg.call(zoom.on('zoom', () => {
+            mapGroup.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+        }));
+
+        
+        d3.json("topoJSONdata.json", function(error, topoJSONdata) {
+            
+            d3.tsv("tsvData.tsv", function(error, tsvData) {
+                const countries = topojson.feature(topoJSONdata, topoJSONdata.objects.countries);
+
+                //row from file
+                const rowById = {};
+                tsvData.forEach(d => {
+                    rowById[parseInt(d.iso_n3)] = d;
+                });
+
+                countries.features.forEach(d => {
+                    Object.assign(d.properties, rowById[parseInt(d.id)])
+                });
+
+                const countryNames = [];
+                countries.features.forEach(item => {
+                    countryNames.push(item.properties.name);
+                });
+
+               
+                countryNames.sort();
+                const dropDown = d3.select("#countries");
+                dropDown.selectAll(null)
+                    .data(countryNames)
+                    .enter()
+                    .append("option")
+                    .attr("value", function (d) { return d; })
+                    .text(function (d) { return d; });
+
+                dropDown.on('change', function () {
+                    const select = document.getElementById('countries');
+                    const name = select.options[select.selectedIndex].value;
+                    let country;
+                    countries.features.forEach(item => {
+                       if (item.properties.name === name) {
+                           country = item;
+                       }
+                    });
+
+                    if (typeof country !== 'undefined') {
+                        const data = {
+                            country: name,
+                            fifteen: country.properties.fifteen,
+                            sixteen: country.properties.sixteen,
+                            seventeen: country.properties.seventeen,
+                            eighteen: country.properties.eighteen,
+                            nineteen: country.properties.nineteen,
+                            twenty: country.properties.twenty,
+                            twentyone: country.properties.twentyone,
+                            twentytwo: country.properties.twentytwo,
+                        }
+                        makeGraphs(data);
+                    }
+                })
+                
+
+                mapGroup.selectAll('path')
+                    .data(countries.features)
+                    .enter()
+                    .append('path')
+                    .attr('class', 'country')
+                    .attr('d', pathGenerator)
+                    .attr('fill', d => colors[String(colorValue(d)).substring(0, 1) - 1])
+                    .on('click', d => {
+                       
+                        if (d3.event.defaultPrevented) return;
+                        const data = {
+                            country: rowById[parseInt(d.id)].name,
+                            
+                            fifteen: rowById[parseInt(d.id)].fifteen,
+                            sixteen: rowById[parseInt(d.id)].sixteen,
+                            seventeen: rowById[parseInt(d.id)].seventeen,
+                            eighteen: rowById[parseInt(d.id)].eighteen,
+                            nineteen: rowById[parseInt(d.id)].nineteen,
+                            twenty: rowById[parseInt(d.id)].twenty,
+                            twentyone: rowById[parseInt(d.id)].twentyone,
+                            twentytwo: rowById[parseInt(d.id)].twentytwo,
+                        }
+                        //console.log(d.id);
+                        makeGraphs(data);
+                    })
+                    .append('title')
+                    .text(d => {
+                        const name = rowById[parseInt(d.id)].name;
+                        const continent = rowById[parseInt(d.id)].continent;
+                        const region = rowById[parseInt(d.id)].region_wb;
+                        const population = rowById[parseInt(d.id)].twentytwo;
+                        const popuplationModified = numberWithSpaces(parseInt(population));
+
+                        return name + "\nContinent: " + continent + "\nRegion: " + region + "\nPopulation: " + popuplationModified;
+                    })
+            });    
+        });
+
+        //for displaying big numbers
+        function numberWithSpaces(x) {
+            return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        }
+
+        const legendValues = ["1. High income: OECD", "2. High income: nonOECD", "3. Upper middle income",
+                            "4. Lower middle income", "5. Low income"]
+
+        const legend = svg.append('g');
+        const diameter = 15;
+        const textWidth = 210;
+        const space = 2;
+        const rectWidth = diameter + textWidth + space * 5;
+        const rectHeight = 120;
+        const legendTitle = "World income groups";
+
+        legend.append("rect")
+            .attr("x", "50")
+            .attr("y", "520")
+            .attr('rx', 16)
+            .attr("width", rectWidth)
+            .attr("height", rectHeight)
+            .attr("style", "stroke: black; stroke-width: 1; fill: white; opacity: 0.7; stroke-opacity: 1");
+
+        legend.append('text')
+            .attr("x", 70)
+            .attr("y", 535)
+            .attr("dy", ".25em")
+            .attr('font-family', 'sans-serif')
+            .text(legendTitle);
+
+        for (let i = 0; i < colors.length; i++) {
+            legend.append("circle")
+                .attr("cx", "65")
+                .attr("cy", d => 540 + 15 * (i + 1))
+                .attr("r", "5")
+                .attr("fill", d => colors[i])
+
+            legend.append('text')
+                .attr("x", "75")
+                .attr("y", 542 + 15 * (i + 1))
+                .attr("dy", ".25em")
+                .attr('font-family', 'sans-serif')
+                .text(d => legendValues[i]);
+        }
+
+        
+        const graphSvg = d3.select("body").append("svg")
+            .attr("width", width)
+            .attr("height", height * 0.75);
+        let graphGroup = graphSvg.append('g');
+        let graphMade = false;
+
+        function makeGraphs(data) {
+            const first = data.fifteen;
+
+            //if there is no data for that country
+            if (first === 0) {
+                alert("No data for this country");
+                return;
+            }
+
+            const second = data.sixteen;
+            const third = data.seventeen;
+            const fourth = data.eighteen;
+            const fifth = data.nineteen;
+            const sixth = data.twenty;
+            const seventh = data.twentyone;
+            const eighth = data.twentytwo;
+
+
+
+            if (graphMade) {
+                graphGroup.remove();
+                linechart.remove();
+                graphSvg.selectAll(".bar").remove();
+                graphSvg.selectAll(".removeable").remove();
+                graphGroup = graphSvg.append('g');
+            }
+            
+            window.scrollTo(0, document.body.scrollHeight);
+
+            const margin = {top: 20, bottom: 70, left: 40, right: 20};
+            const width = 750 - margin.left - margin.right;
+            const height = 500 - margin.top - margin.bottom;
+
+            const title = data.country + " population amount from 2015 to 2022";
+            const xAxisLinechartTitle = "Time [years]";
+            const yAxisLinechartTitle = "Value [millions]";
+            
+            const xDataLinechart = ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023"];
+            const yDataLinechart = [first, second, third, fourth, fifth, sixth, seventh, eighth];
+
+            const max = Math.max(...yDataLinechart);
+            const min = Math.min(...yDataLinechart);
+            //const sum = parseInt(yDataLinechart.reduce((a, b) => a + b), 10);
+            //const avg = parseInt(Math.ceil(sum / yDataLinechart.length));
+            const minYValue = 874;
+            const maxYValue = 1283;
+
+            const chartScale = d3.scale.linear()
+                .domain([minYValue, maxYValue])
+                .range([max, 1]);
+
+            const x = d3.scale.ordinal()
+                .domain(d3.range(xDataLinechart.length))
+                .rangePoints([0, width]);
+
+            const y = d3.scale.linear()
+                .domain([0, d3.max(yDataLinechart)])
+                .range([height, 0]);
+
+            const xAxisLinechart = d3.svg.axis()
+                .scale(x)
+                .orient("bottom")
+                .innerTickSize(-height)
+                .outerTickSize(5)
+                .tickPadding(10)
+                .tickFormat(function (d, i) { return xDataLinechart[i]; });
+
+            const yAxisLinechart = d3.svg.axis()
+                .scale(y)
+                .orient("left")
+                .innerTickSize(-width)
+                .outerTickSize(5)
+                .tickPadding(10);
+
+            graphGroup.append("g")
+                .attr("class", "white x axis")
+                .attr("transform", "translate(" + 0.2 * width + "," + height * 1.143 + ")")
+                .call(xAxisLinechart)
+                .append("text")
+                .attr("x", (width / 2))
+                .attr("y", 50)
+                .attr("dy", ".100em")
+                .attr("font-weight", "bold")
+                .attr("font-size", "15px")
+                .style("text-anchor", "middle")
+                .text(xAxisLinechartTitle);
+
+            graphGroup.append("g")
+                .attr("class", "white y axis")
+                .attr("transform", "translate(" + 0.2 * width + "," + height / 7 + ")")
+                .call(yAxisLinechart)
+                .append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", - (0.75 * width / 2) + 50)
+                .attr("y", -70)
+                .attr("dy", ".50em")
+                .attr("font-weight", "bold")
+                .attr("font-size", "15px")
+                .style("text-anchor", "middle")
+                .text(yAxisLinechartTitle);
+
+            const valueline = d3.svg.line()
+                .interpolate("monotone")
+                .x(function(d, i) { return x(i); })
+                .y(function(d) { return y(d); });
+
+            let linechartValue = "";
+
+            const linechartValueLabel = graphSvg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -25)
+                .attr("transform", "translate(" + -(0.1 * width) + "," + height / 7 + ")")
+                .attr("text-anchor", "middle")
+                .attr("font-weight", "bold")
+                .attr("opacity", "0")
+                .style("fill", "#33FFA1")
+                .style("font-size", "1.5em")
+                .text(linechartValue);
+
+            linechart = graphGroup.append("path")
+                .attr("transform", "translate(" + 0.2 * width + "," + height / 7 + ")")
+                .attr("d", valueline(yDataLinechart))
+                .attr("fill", "none")
+                .style("stroke", "#99FFA1")
+                .style("stroke-width", "5px")
+                .on('mouseover', function () { linechartValueLabel.attr("opacity", "1"); })
+                .on('mouseout', function () { linechartValueLabel.attr("opacity", "0"); })
+                .on('mousemove', function () {
+                    linechartValue = Math.floor(chartScale(d3.event.pageY)).toString();
+                    linechartValueLabel.text(linechartValue);
+                });
+
+            const pathLength = linechart.node().getTotalLength();
+
+            
+            linechart
+                .attr("stroke-dashoffset", pathLength)
+                .attr("stroke-dasharray", pathLength)
+                .transition()
+                .delay(100)
+                .duration(2000)
+                .attr("stroke-dashoffset", 0);
+
+            graphGroup.append("text")
+                .attr("x", width / 2)
+                .attr("y", -25)
+                .attr("transform", "translate(" + 0.5 * width + "," + height / 7 + ")")
+                .attr("text-anchor", "middle")
+                .attr("font-weight", "bold")
+                .style("fill", "white")
+                .style("font-size", "1.5em")
+                .text(title);
+
+            const yDataBarchart = [min, max];
+            const xDataBarchart = ["Min", "Max"];
+
+            const widthBarchart = 300 - margin.left - margin.right;
+            const heightBarchart = 500 - margin.top - margin.bottom;
+            const barPadding = 4;
+            const barWidth = (width / yDataBarchart.length - barPadding) / 5;
+
+            const xBarchart = d3.scale.ordinal()
+                .domain(d3.range(yDataBarchart.length))
+                .rangeRoundBands([0, widthBarchart]);
+
+            const yBarchart = d3.scale.linear()
+                .domain([0, d3.max(yDataBarchart)])
+                .range([heightBarchart, 0]);
+
+            const xAxisBarchart = d3.svg.axis()
+                .scale(xBarchart)
+                .orient("bottom")
+                .tickFormat((d, i) => xDataBarchart[i]);
+
+            const yAxisBarchart = d3.svg.axis()
+                .scale(yBarchart)
+                .orient("left")
+                .ticks(10);
+
+            graphSvg.append("g")
+                .attr("class", "white removeable y axis")
+                .attr("transform", "translate(1000," + height / 7 + ")")
+                .call(yAxisBarchart)
+                .append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", - (0.75 * width / 2) + 50)
+                .attr("y", -70)
+                .attr("dy", ".50em")
+                .attr("font-weight", "bold")
+                .attr("font-size", "15px")
+                .style("text-anchor", "middle")
+                .style("fill", "white")
+                .text(yAxisLinechartTitle);
+
+            graphSvg.append("g")
+                .attr("class", "white removeable x axis")
+                .attr("transform", "translate(1000," + height * 1.143 + ")")
+                .call(xAxisBarchart)
+                .selectAll("text")
+                .style("fill", "white")
+                .style("text-anchor", "middle");
+
+            let barchartValue = "";
+
+            const barchartValueLabel = graphSvg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -25)
+                .attr("transform", "translate(" + 1.13 * width + "," + height / 7 + ")")
+                .attr("text-anchor", "middle")
+                .attr("font-weight", "bold")
+                .attr("opacity", "0")
+                .style("fill", "#33FFA1")
+                .style("font-size", "1.5em")
+                .text(barchartValue);
+
+            const barchartColors = ["#33FFA1", "#66CFA1", "#99FFA1"];
+
+            const barchart = graphSvg.selectAll("rect")
+                .data(yDataBarchart)
+                .enter()
+                .append("rect")
+                .attr("class", "bar removeable")
+                .attr("transform", "translate(1020," + height / 7 + ")")
+                .attr("x", function(d, i) { return xBarchart(i); })
+                .attr("width", barWidth)
+                .attr("height", function () { return heightBarchart - yBarchart(0); })
+                .attr("y", function () { return yBarchart(0); })
+                .attr("fill", function (d, i) { return barchartColors[i]; })
+                .on("mouseover", function() { barchartValueLabel.attr("opacity", "1"); } )
+                .on("mouseout", function() { barchartValueLabel.attr("opacity", "0"); })
+                .on("mousemove", function() {
+                    barchartValue = Math.floor(chartScale(d3.event.pageY)).toString();
+                    barchartValueLabel.text(barchartValue);
+                })
+
+            //bl.ocks.org
+            graphSvg.selectAll(".bar")
+                .transition()
+                .delay(100)
+                .duration(2000)
+                .attr("y", function(d) { return yBarchart(d); })
+                .attr("height", function(d) { return heightBarchart - yBarchart(d); });
+
+            graphMade = true;
+        }
+
+        //delete decimal part
+        function parseData(data) {
+            if (!data.toString().includes(",")) {
+                return 0;
+            }
+            const commmaIndex = data.toString().indexOf(",");
+            const value = data.toString().substring(0, commmaIndex);
+            return parseInt(parseInt(value) / 1000000000);
+        }
+    </script>
+
+</body>
+</html>
